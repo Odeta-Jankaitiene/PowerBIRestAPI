@@ -1,0 +1,61 @@
+#Looking if there are linked entities (dataflows that use other dataflows) that is a premium feature
+
+#Get dataflows
+$DataflowUrl = "https://api.powerbi.com/v1.0/myorg/admin/dataflows"
+$Dataflows = (Invoke-PowerBIRestMethod -Method GET -URL $DataflowUrl | ConvertFrom-JSON).Value
+$Dataflows
+
+$DF = $Dataflows | Select objectId, workspaceId, configuredBy
+$DFWSIdsUnique = $DF.workspaceId | Sort-Object -Unique
+#get data for the first WSId
+$DFIds = ($DF | Where workspaceId -eq $DFWSIdsUnique[1]).objectId
+
+#Returns a list of upstream dataflows for the specified dataflow
+#https://learn.microsoft.com/en-us/rest/api/power-bi/admin/dataflows-get-upstream-dataflows-in-group-as-admin
+# 1. get dataflows & workspace IDs form workspaces
+# 2. GET https://api.powerbi.com/v1.0/myorg/admin/groups/{groupId}/dataflows/{dataflowId}/upstreamDataflows
+
+#$DataflowsUrl = "https://api.powerbi.com/v1.0/myorg/admin/groups/$WSId/dataflows/$DataflowId/upstreamDataflows"
+#$upstreamDataflows = (Invoke-PowerBIRestMethod -Method GET -URL $DataflowsUrl | ConvertFrom-JSON).Value
+#$upstreamDataflows
+
+$WSId = $DFWSIdsUnique[1]
+$DFId = $DFIds[1]
+
+(Invoke-PowerBIRestMethod -Method GET -URL "https://api.powerbi.com/v1.0/myorg/admin/groups/$WSId/dataflows/$DFId/upstreamDataflows" | ConvertFrom-JSON).Value
+
+
+#put into loop
+
+$DFWSIdsUnique = $DF.workspaceId | Sort-Object -Unique
+
+$WSId = $DFWSIdsUnique[1]
+#get dataflow Ids for the first workspace Id
+$DFIds = ($DF | Where workspaceId -eq $WSId).objectId
+
+$UpstreamDF = @()
+@(
+	$DFIds | ForEach-Object { 
+		$d = (Invoke-PowerBIRestMethod -Method GET -URL "https://api.powerbi.com/v1.0/myorg/admin/groups/$WSId/dataflows/$_/upstreamDataflows" | ConvertFrom-JSON).Value
+		#$a | Add-Member -MemberType NoteProperty -Name "PipelineID" -Value $_
+		$UpstreamDF += $a
+	}
+)
+$UpstreamDF
+
+for ($num = 0; $num -le $DFWSIdsUnique.Length-1; $num++)
+{
+	$WSId = $DFWSIdsUnique[$num]
+	#get dataflow Ids for the first workspace Id
+	$DFIds = ($DF | Where workspaceId -eq $WSId).objectId
+	#"I count $num" #for troubleshooting
+	$UpstreamDF = @()
+	@(
+		$DFIds | ForEach-Object { 
+			$d = (Invoke-PowerBIRestMethod -Method GET -URL "https://api.powerbi.com/v1.0/myorg/admin/groups/$WSId/dataflows/$_/upstreamDataflows" | ConvertFrom-JSON).Value
+			#$a | Add-Member -MemberType NoteProperty -Name "PipelineID" -Value $_
+			$UpstreamDF += $a
+		}
+	)
+}
+$UpstreamDF
