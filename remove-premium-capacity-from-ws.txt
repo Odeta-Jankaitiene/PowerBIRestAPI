@@ -1,8 +1,5 @@
-
-
 #Unassigns the specified workspaces from capacity.
 #POST https://api.powerbi.com/v1.0/myorg/admin/capacities/UnassignWorkspaces
-#Request Body -> workspacesToUnassign	True	string[]	The workspaces to migrate to a shared capacity
 #https://learn.microsoft.com/en-us/rest/api/power-bi/admin/capacities-unassign-workspaces-from-capacity
 
 
@@ -14,6 +11,3 @@ $body = @"
 "@
 
 Invoke-PowerBIRestMethod -Method POST -Url "https://api.powerbi.com/v1.0/myorg/admin/capacities/UnassignWorkspaces" -Body $body
-
-
-
