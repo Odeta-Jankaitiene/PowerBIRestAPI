@@ -1,0 +1,230 @@
+#first time - install
+Install-Module -Name MicrosoftPowerBIMgmt
+
+## Choose your authencication type (1) or (2) and run only that.
+# 1. fill in client id and secret value or your credentials
+$TenantId = "xxxxxxxx-xxxx-xxxx-xxx-xxxxxxxxxxxx"
+Connect-PowerBIServiceAccount -ServicePrincipal -Credential (Get-Credential) -Tenant $TenantId #where $TenantId is Power BI tenant ID
+
+# 2. connect with admin account
+Connect-PowerBIServiceAccount
+
+<# Usual response would be:
+Environment : Public
+TenantId    : xxxxxxxx-xxxx-xxxx-xxx-xxxxxxxxxxxx
+UserName    : email@domain.onmicrosoft.com
+#>
+
+
+
+
+
+
+##################################### Create Workspaces #####################################
+
+# 1. create a new workspace (WS)
+
+# https://learn.microsoft.com/en-us/rest/api/power-bi/groups/create-group#code-try-0
+#POST https://api.powerbi.com/v1.0/myorg/groups?workspaceV2=True 
+
+$URLCreate =  "https://api.powerbi.com/v1.0/myorg/groups?workspaceV2=True"
+
+$WSName = "Demo WS1"
+
+$bodyWS = @"
+            {
+            "name": "$WSName" 
+            }
+"@
+
+Invoke-PowerBIRestMethod -Method POST -URL $URLCreate -Body $bodyWS
+
+
+
+#### What if a workspace with this name already exists? need to check ####
+
+# 1. Get all WS
+# 2. Check if one already exists
+# 3. If not, create it
+
+
+# Get all WS
+#https://learn.microsoft.com/en-us/rest/api/power-bi/admin/groups-get-groups-as-admin
+#GET https://api.powerbi.com/v1.0/myorg/admin/groups?$top={$top}
+
+$URLGetWS =  "https://api.powerbi.com/v1.0/myorg/admin/groups?%24filter=(name eq '$WSName')&%24top=5000"
+
+$GetWS = Invoke-PowerBIRestMethod -Method GET -URL $URLGetWS
+
+$GetWS | ConvertFrom-JSON
+
+($GetWS | ConvertFrom-JSON).Value #if you want to see result in more convenient way
+
+
+#### Make it a little bit more sofisticated :) ####
+
+if ( !($GetWS) ) { 
+    Invoke-PowerBIRestMethod -Method POST -URL $URLCreate -Body $bodyWS 
+    }
+else { Write-Host "Workspace already exists" }
+
+
+#### What if you want to create multiple workspaces?
+
+# Store WS names (can be even a file)
+$WSNames = "Demo WS2", "Demo WS3", "Demo WS4", "Demo WS5"
+
+# Go throufh all names one by one and create a new workspace
+
+$WSNames | ForEach-Object {
+    $body = @"
+                {
+                    "name": "$_"
+                }
+"@
+
+    Invoke-PowerBIRestMethod -Method POST -URL $URLCreate -Body $body 
+
+    Write-Host "WS '$_' was created"
+}
+
+
+#### Again, what if such workspace already exists? ####
+
+## 1. Delete WS, because we'll run creation loop again
+
+# DELETE https://api.powerbi.com/v1.0/myorg/groups/{groupId}
+
+$WSNames | ForEach-Object {
+    # Needs state eq 'Active' because you can see deleted workspaces too
+    $URLGetWS2 =  "https://api.powerbi.com/v1.0/myorg/admin/groups?%24filter=(name eq '$_' and state eq 'Active')&%24top=5000"
+
+    $GetWS = (Invoke-PowerBIRestMethod -Method GET -URL $URLGetWS2 | ConvertFrom-JSON).Value
+
+    $WSid = $GetWS.id
+
+    $DeleteUrl = "https://api.powerbi.com/v1.0/myorg/groups/$WSid"
+    
+    Invoke-PowerBIRestMethod -Method DELETE -URL $DeleteUrl
+    
+    Write-Verbose "WS '$_' was deleted" -Verbose
+}
+
+
+## 2. Create multiple WS, but if only they don't exist
+
+$WSNames | ForEach-Object {
+    
+    $URLGetWS =  "https://api.powerbi.com/v1.0/myorg/admin/groups?%24filter=(name eq '$_' and state eq 'Active')&%24top=5000"
+    $GetWS = (Invoke-PowerBIRestMethod -Method GET -URL $URLGetWS | ConvertFrom-JSON).Value
+
+    #-ine means not equal and case-insensitive
+    if( $_ -ine $GetWS.name) 
+        { 
+        
+            $body = @"
+                        {
+                            "name": "$_"
+                        }
+"@
+
+            Invoke-PowerBIRestMethod -Method POST -URL $URLCreate -Body $body | ConvertFrom-JSON
+
+            Write-Verbose "WS '$_' was created" -Verbose
+        }
+    else { Write-Host "Workspace "$GetWS.name" already exists, so it won't be created." } 
+}
+
+
+
+
+
+
+##################################### WS users ##################################### 
+
+#### Check WS users ####
+
+## 1. Get WS ids
+# GET https://api.powerbi.com/v1.0/myorg/admin/groups/{groupId}/users
+
+# Eliminating "My Workspace": type eq 'Workspace'
+$URLGetAllWS =  "https://api.powerbi.com/v1.0/myorg/admin/groups?%24filter=(state eq 'Active' and type eq 'Workspace')&%24top=5000"
+$GetAllWS = (Invoke-PowerBIRestMethod -Method GET -URL $URLGetAllWS | ConvertFrom-JSON).Value
+
+$AllWSIds = $GetAllWS.id
+
+## 2. Get WS users
+$users = @()
+
+$WSIds | ForEach-Object { 
+	    
+    $uri = "https://api.powerbi.com/v1.0/myorg/admin/groups/$_/users"
+
+	$a = (Invoke-PowerBIRestMethod -Method GET -URL $uri | ConvertFrom-JSON).Value `
+                | Select groupUserAccessRight, emailAddress, displayName
+
+	$a | Add-Member -MemberType NoteProperty -Name "WorkspaceId" -Value $_
+	
+    $users += $a
+    
+    Write-Host "Users for WS $_ found"
+}
+$users
+
+
+#### Add July as a member to all WS that she isn't a part of ####
+
+<#
+POST https://api.powerbi.com/v1.0/myorg/admin/groups/{groupId}/users
+{
+  "emailAddress": "john@contoso.com",
+  "groupUserAccessRight": "Admin"
+}
+#>
+
+# Since WS where July is a user could have multiple users (multiple rows - dublicated WS ids), 
+# we need to get WS Id first and then filter out rows from $users
+
+## 1. Get WS id where July is a user
+
+$WSIdJuly = ($users | Where displayName -eq 'July Dench').WorkspaceId
+
+##. 2. Get WS ids where July isn't a user
+
+$WSIds_noJuly = ($users | Where WorkspaceId -ne $WSIdJuly).WorkspaceId
+
+## 3. Add July as a Member
+
+$bodyUsers = @"
+    {
+        "emailAddress": "July@domain.onmicrosoft.com",
+        "groupUserAccessRight": "Member"
+    }
+"@
+
+$WSIds_noJuly | ForEach-Object { 
+	    
+    $uri = "https://api.powerbi.com/v1.0/myorg/admin/groups/$_/users"
+	Invoke-PowerBIRestMethod -Method POST -URL $uri -Body $bodyUsers
+	
+    Write-Host "July added as a Member in WS $_"
+}
+
+## 4. Check if it worked
+
+$users_noJuly = @()
+
+$WSIds_noJuly | ForEach-Object { 
+	    
+    $uri = "https://api.powerbi.com/v1.0/myorg/admin/groups/$_/users"
+	
+    $a = (Invoke-PowerBIRestMethod -Method GET -URL $uri | ConvertFrom-JSON).Value `
+                | Select groupUserAccessRight, emailAddress, displayName
+	
+    $a | Add-Member -MemberType NoteProperty -Name "WorkspaceId" -Value $_
+	
+    $users_noJuly += $a
+        
+    Write-Host "Users for WS $_ found"
+}
+$users_noJuly
