@@ -20,11 +20,11 @@ else {
 #>
 
 ## Choose your authencication type (1) or (2) and run only that.
-# 1. fill in client id and secret value or your credentials
+# 1.1 fill in client id and secret value or your credentials
 $TenantId = Read-Host -Prompt 'Enter the Tenant Id' #where $TenantId is Power BI tenant ID
 Connect-PowerBIServiceAccount -ServicePrincipal -Credential (Get-Credential) -Tenant $TenantId 
 
-# 2. connect with admin account
+# 1.2 connect with admin account
 Connect-PowerBIServiceAccount | Out-Null #remove | Out-Null if you want to see the output (example below)
 
 <# Usual response would be:
